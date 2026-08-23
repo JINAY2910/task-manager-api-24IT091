@@ -1,4 +1,4 @@
-# Task Manager — Prac 6: Full Stack React + Node + MongoDB
+# Task Manager — Full Stack React + Node + MongoDB
 
 ## Running the App
 
