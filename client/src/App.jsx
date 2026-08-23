@@ -2,14 +2,17 @@ import { useState, useEffect } from 'react';
 import { getTasks } from './api';
 import TaskForm from './components/TaskForm';
 import TaskItem from './components/TaskItem';
+import Auth from './components/Auth';
 import './App.css';
 
 export default function App() {
+  const [token, setToken] = useState(localStorage.getItem('token') || null);
   const [tasks, setTasks] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   const fetchTasks = async () => {
+    if (!token) return;
     setLoading(true);
     setError('');
     try {
@@ -19,14 +22,30 @@ export default function App() {
       } else {
         throw new Error('Unexpected response');
       }
-    } catch {
-      setError('Could not connect to backend. Is the server running?');
+    } catch (err) {
+      setError(err.message || 'Could not connect to backend.');
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => { fetchTasks(); }, []);
+  useEffect(() => {
+    fetchTasks();
+  }, [token]);
+
+  useEffect(() => {
+    const handleUnauthorized = () => {
+      handleLogout();
+    };
+    window.addEventListener('unauthorized', handleUnauthorized);
+    return () => window.removeEventListener('unauthorized', handleUnauthorized);
+  }, []);
+
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    setToken(null);
+    setTasks([]);
+  };
 
   const handleCreated = (task) => setTasks((prev) => [task, ...prev]);
   const handleUpdated = (updated) =>
@@ -37,18 +56,27 @@ export default function App() {
   const pending = tasks.filter((t) => !t.completed).length;
   const done = tasks.filter((t) => t.completed).length;
 
+  if (!token) {
+    return <Auth onLogin={setToken} />;
+  }
+
   return (
     <div className="container">
       <div className="header">
         <div className="header-title">
           <h1>Task <span>Manager</span></h1>
         </div>
-        {!loading && !error && tasks.length > 0 && (
-          <div className="header-stats">
-            <span className="stat-badge pending">{pending} pending</span>
-            <span className="stat-badge done">{done} done</span>
-          </div>
-        )}
+        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+          {!loading && !error && tasks.length > 0 && (
+            <div className="header-stats">
+              <span className="stat-badge pending">{pending} pending</span>
+              <span className="stat-badge done">{done} done</span>
+            </div>
+          )}
+          <button onClick={handleLogout} className="btn-secondary" style={{ padding: '0.4rem 0.8rem', fontSize: '0.9rem' }}>
+            Logout
+          </button>
+        </div>
       </div>
 
       <div className="card">

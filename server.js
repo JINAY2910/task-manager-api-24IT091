@@ -3,6 +3,9 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const Task = require('./models/Task');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const User = require('./models/User');
 
 const app = express();
 app.use(cors());
@@ -40,12 +43,83 @@ const validateTaskId = (req, res, next) => {
     next();
 };
 
+// --- Auth Routes ---
+app.post('/register', async (req, res, next) => {
+    try {
+        const { email, password } = req.body;
+        if (!email || !password) {
+            return res.status(400).json({ error: 'Email and password are required' });
+        }
+        const hashedPassword = await bcrypt.hash(password, 10);
+        const user = await User.create({ email, password: hashedPassword });
+        res.status(201).json({ message: 'User registered successfully', userId: user._id });
+    } catch (err) {
+        if (err.code === 11000) {
+            return res.status(400).json({ error: 'Email already exists' });
+        }
+        next(err);
+    }
+});
+
+app.post('/login', async (req, res, next) => {
+    try {
+        const { email, password } = req.body;
+        const user = await User.findOne({ email });
+        if (!user) {
+            return res.status(401).json({ error: 'Invalid credentials' });
+        }
+        const isMatch = await bcrypt.compare(password, user.password);
+        if (!isMatch) {
+            return res.status(401).json({ error: 'Invalid credentials' });
+        }
+        const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '1h' });
+        res.status(200).json({ token });
+    } catch (err) {
+        next(err);
+    }
+});
+
+// Auth Middleware
+const authMiddleware = (req, res, next) => {
+    try {
+        const token = req.headers.authorization?.split(' ')[1];
+        if (!token) {
+            return res.status(401).json({ error: 'No token provided' });
+        }
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        req.user = decoded;
+        next();
+    } catch (err) {
+        return res.status(401).json({ error: 'Invalid or expired token' });
+    }
+};
+
+app.get('/me', authMiddleware, async (req, res, next) => {
+    try {
+        const user = await User.findById(req.user.id).select('-password');
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+        res.status(200).json(user);
+    } catch (err) {
+        next(err);
+    }
+});
+
+// Input Validation Middleware
+const validateTaskInput = (req, res, next) => {
+    if (!req.body.title || req.body.title.trim() === '') {
+        return res.status(400).json({ error: 'Task title is required' });
+    }
+    next();
+};
+
 // --- CRUD Routes ---
 
 // GET /tasks
-app.get('/tasks', async (req, res, next) => {
+app.get('/tasks', authMiddleware, async (req, res, next) => {
     try {
-        const tasks = await Task.find();
+        const tasks = await Task.find({ user: req.user.id });
         res.status(200).json(tasks);
     } catch (err) {
         next(err);
@@ -53,9 +127,9 @@ app.get('/tasks', async (req, res, next) => {
 });
 
 // GET /tasks/:id (Supplementary Problem)
-app.get('/tasks/:id', validateTaskId, async (req, res, next) => {
+app.get('/tasks/:id', authMiddleware, validateTaskId, async (req, res, next) => {
     try {
-        const task = await Task.findById(req.params.id);
+        const task = await Task.findOne({ _id: req.params.id, user: req.user.id });
         if (!task) {
             return res.status(404).json({ error: 'Task not found' });
         }
@@ -66,9 +140,10 @@ app.get('/tasks/:id', validateTaskId, async (req, res, next) => {
 });
 
 // POST /tasks
-app.post('/tasks', async (req, res, next) => {
+app.post('/tasks', authMiddleware, validateTaskInput, async (req, res, next) => {
     try {
-        const task = await Task.create(req.body);
+        const taskData = { ...req.body, user: req.user.id };
+        const task = await Task.create(taskData);
         res.status(201).json(task);
     } catch (err) {
         next(err);
@@ -76,12 +151,13 @@ app.post('/tasks', async (req, res, next) => {
 });
 
 // PUT /tasks/:id
-app.put('/tasks/:id', validateTaskId, async (req, res, next) => {
+app.put('/tasks/:id', authMiddleware, validateTaskId, validateTaskInput, async (req, res, next) => {
     try {
-        const task = await Task.findByIdAndUpdate(req.params.id, req.body, { 
-            new: true, // Return the updated document
-            runValidators: true // Run schema validations on update
-        });
+        const task = await Task.findOneAndUpdate(
+            { _id: req.params.id, user: req.user.id }, 
+            req.body, 
+            { new: true, runValidators: true }
+        );
         
         if (!task) {
             return res.status(404).json({ error: 'Task not found' });
@@ -93,9 +169,9 @@ app.put('/tasks/:id', validateTaskId, async (req, res, next) => {
 });
 
 // DELETE /tasks/:id
-app.delete('/tasks/:id', validateTaskId, async (req, res, next) => {
+app.delete('/tasks/:id', authMiddleware, validateTaskId, async (req, res, next) => {
     try {
-        const task = await Task.findByIdAndDelete(req.params.id);
+        const task = await Task.findOneAndDelete({ _id: req.params.id, user: req.user.id });
         if (!task) {
             return res.status(404).json({ error: 'Task not found' });
         }
