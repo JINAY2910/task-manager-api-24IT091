@@ -1,9 +1,12 @@
-import { useState, useEffect } from 'react';
+import { Suspense, lazy, useState, useEffect } from 'react';
 import { getTasks } from './api';
-import TaskForm from './components/TaskForm';
-import TaskItem from './components/TaskItem';
+import { Routes, Route, Link } from 'react-router-dom';
 import Auth from './components/Auth';
 import './App.css';
+
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const Projects = lazy(() => import('./pages/Projects'));
+const Contact = lazy(() => import('./pages/Contact'));
 
 export default function App() {
   const [token, setToken] = useState(localStorage.getItem('token') || null);
@@ -67,6 +70,11 @@ export default function App() {
           <h1>Task <span>Manager</span></h1>
         </div>
         <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+          <nav style={{ display: 'flex', gap: '1rem' }}>
+            <Link to="/" className="nav-link">Dashboard</Link>
+            <Link to="/projects" className="nav-link">Projects</Link>
+            <Link to="/contact" className="nav-link">Contact</Link>
+          </nav>
           {!loading && !error && tasks.length > 0 && (
             <div className="header-stats">
               <span className="stat-badge pending">{pending} pending</span>
@@ -79,29 +87,22 @@ export default function App() {
         </div>
       </div>
 
-      <div className="card">
-        <TaskForm onCreated={handleCreated} />
-      </div>
-
-      <p className="section-heading">
-        All Tasks {!loading && `(${tasks.length})`}
-      </p>
-
-      <div className="task-list">
-        {loading && <p className="status-msg">Loading...</p>}
-        {error && <p className="error">{error}</p>}
-        {!loading && !error && tasks.length === 0 && (
-          <p className="status-msg">No tasks yet. Add one above.</p>
-        )}
-        {tasks.map((task) => (
-          <TaskItem
-            key={task._id}
-            task={task}
-            onUpdated={handleUpdated}
-            onDeleted={handleDeleted}
-          />
-        ))}
-      </div>
+      <Suspense fallback={<div style={{ padding: '2rem', textAlign: 'center' }}>Loading page...</div>}>
+        <Routes>
+          <Route path="/" element={
+            <Dashboard 
+              tasks={tasks} 
+              loading={loading} 
+              error={error} 
+              handleCreated={handleCreated} 
+              handleUpdated={handleUpdated} 
+              handleDeleted={handleDeleted} 
+            />
+          } />
+          <Route path="/projects" element={<Projects tasks={tasks} />} />
+          <Route path="/contact" element={<Contact />} />
+        </Routes>
+      </Suspense>
     </div>
   );
 }

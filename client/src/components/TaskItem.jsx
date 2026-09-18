@@ -30,7 +30,10 @@ export default function TaskItem({ task, onUpdated, onDeleted }) {
   const handleToggle = async () => {
     setLoading(true);
     try {
-      const updated = await updateTask(task._id, { completed: !task.completed });
+      const updated = await updateTask(task._id, { 
+        title: task.title,
+        completed: !task.completed 
+      });
       if (updated.error) throw new Error(updated.error);
       onUpdated(updated);
     } catch (err) {
